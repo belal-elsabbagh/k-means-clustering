@@ -4,7 +4,7 @@ import pandas as pd
 from src.distance_functions import euclidean
 
 
-def _init_centroids(df, k) -> dict:
+def _init_c(df, k) -> dict:
     return {i+1: row[1].tolist() for i, row in zip(range(k), df.sample(n=k).iterrows())}
 
 
@@ -31,10 +31,11 @@ def get_centers(df, clusters) -> dict:
     return centers
 
 
-def cluster(df: pd.DataFrame, k, distance_fn=None):
+def cluster(df: pd.DataFrame, k, distance_fn=None, init_c=None):
     distance_fn = _init_params(distance_fn)
-    centroids = _init_centroids(df, k)
+    centroids = _init_c(df, k) if init_c is None else init_c
     while True:
+        print(centroids)
         clusters = assign_to_clusters(df, centroids, distance_fn)
         centers = get_centers(df, clusters)
         if centers == centroids:
@@ -43,6 +44,4 @@ def cluster(df: pd.DataFrame, k, distance_fn=None):
 
 
 def _init_params(distance_fn):
-    if distance_fn is None:
-        distance_fn = euclidean
-    return distance_fn
+    return euclidean if distance_fn is None else distance_fn
