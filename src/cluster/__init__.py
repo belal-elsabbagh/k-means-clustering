@@ -12,13 +12,15 @@ def _init_c(df, k) -> dict:
     }
 
 
-def _assign_to_clusters(df, centroids, distance_fn):
-    def get_row_cluster(row):
-        d = {ind: distance_fn(row, c) for ind, c in centroids.items()}
-        return min(d, key=d.get)
+def get_cluster(row, centroids, distance_fn):
+    d = {ind: distance_fn(row, c) for ind, c in centroids.items()}
+    # print(f'{row}\t{d}')
+    return min(d, key=d.get)
 
+
+def _assign_to_clusters(df, centroids, distance_fn):
     return group_rows_by_cluster(
-        {index: get_row_cluster(row.tolist()) for index, row in df.iterrows()}
+        {i: get_cluster(r.tolist(), centroids, distance_fn) for i, r in df.iterrows()}
     )
 
 
@@ -32,7 +34,10 @@ def group_rows_by_cluster(rows):
 def _get_centers(df, clusters) -> dict:
     if clusters is None:
         return {}
-    return {c_num: [np.mean(df[df.index.isin(rows)][f]) for f in df]for c_num, rows in clusters.items()}
+    return {
+        c_num: [np.mean(df[df.index.isin(rows)][f]) for f in df]
+        for c_num, rows in clusters.items()
+    }
 
 
 def _init_params(df, k, distance_fn, init_c):
@@ -42,6 +47,28 @@ def _init_params(df, k, distance_fn, init_c):
         euclidean if distance_fn is None else distance_fn,
         _init_c(df, k) if init_c is None else init_c,
     )
+
+
+def hierarchical_clustering(df):
+    clusters = {i: [i] for i in df.index}
+    while len(clusters) > 1:
+        d = {}
+        for i, c in clusters.items():
+            for j, c2 in clusters.items():
+                if i == j:
+                    continue
+                d[(i, j)] = min(
+                    [
+                        euclidean(df.loc[i].tolist(), df.loc[j].tolist())
+                        for i in c
+                        for j in c2
+                    ]
+                )
+        c = min(d, key=d.get)
+        clusters[c[0]] = clusters[c[0]] + clusters[c[1]]
+        del clusters[c[1]]
+        print(clusters)
+    return clusters
 
 
 def _cluster(
@@ -61,34 +88,38 @@ def _cluster(
     while not satisfied(centroids, centers, max_epochs, i):
         centroids = centers
         if verbose:
-            print(f'Epoch {i+1}: {centroids}')
+            print(f"Epoch {i+1}: {centroids}")
         clusters = _assign_to_clusters(df, centroids, distance_fn)
+        for c, rows in clusters.items():
+            if len(rows) == 0:
+                raise ValueError("Empty cluster")
         centers = _get_centers(df, clusters)
         i += 1
-    return clusters
+    return centers
 
 
 class KMeans:
     def __init__(
-        self, k=None, max_epochs=None, distance_fn=None, init_c=None, verbose=False
+        self, k=None, max_epochs=None, distance_fn=euclidean, init_c=None, verbose=False
     ):
         self.k = k
         self.max_epochs = max_epochs
         self.distance_fn = distance_fn
         self.init_c = init_c
         self.verbose = verbose
-        self.clusters = None
+        self.centers = None
 
     def fit(self, df: pd.DataFrame):
-        self.clusters = _cluster(
+        self.centers = _cluster(
             df, self.k, self.max_epochs, self.distance_fn, self.init_c, self.verbose
         )
         return self
 
     def predict(self, df: pd.DataFrame):
-        return _assign_to_clusters(
-            df, _get_centers(df, self.clusters), self.distance_fn
-        )
+        return get_cluster(df.tolist(), self.centers, self.distance_fn)
+
+    def center_dim(self, dim):
+        return [c[dim] for c in self.centers.values()]
 
 
 class Cluster:
